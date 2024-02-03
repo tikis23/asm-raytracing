@@ -21,16 +21,17 @@ start:
     mov byte ptr [original_video_mode], al
     
     ; set video mode to graphics
-    ; mov ax, 4f02h
-    ; mov bx, 101h ; SVGA 640x480 256col
-    ; int 10h
     mov ax, 0013h ; VGA 320x200 256col
     int 10h
 
     ; check if mode is supported
     cmp ah, 0h
-    jne exit
+    je @@skip_mode_check_exit
+    jmp exit
+    @@skip_mode_check_exit:
 
+    call set_pallete
+    call show_pallete
     call start_app
     
     jmp exit
@@ -47,6 +48,8 @@ start_app proc
         @@for_y:
             xor cx, cx ; x axis
             @@for_x:
+
+                ; set color
                 mov byte ptr es:[bx], dl
                 inc bx
 
@@ -62,10 +65,12 @@ start_app proc
 
         inc dl
 
-        ; check if 'q' is pressed    
+        ; check if key is pressed    
         mov ah, 01h
         int 16h
         jz @@main_loop
+        mov ah, 0h
+        int 16h
         ; if 'q' pressed, exit
         cmp ah, 10h
         je @@break_main
@@ -75,6 +80,90 @@ start_app proc
 
     ret
 start_app endp
+
+set_pallete proc
+    ; 3 red 3 green 2 blue
+
+    mov dx, 03c8h ; set pallete index
+    mov al, 0     ; automatically increments
+    out dx, al
+    mov dx, 03c9h ; start writing colors
+
+    xor bx, bx ; index
+    @@l1:
+        ; red
+        mov al, bl
+        and al, 11100000b
+        shr al, 2
+        out dx, al
+        ; green
+        mov al, bl
+        and al, 00011100b
+        shl al, 1
+        out dx, al
+        ; blue
+        mov al, bl
+        and al, 00000011b
+        shl al, 4
+        out dx, al
+    
+        inc bx
+        cmp bx, 255d
+        jbe @@l1
+
+    ret
+set_pallete endp
+
+show_pallete proc
+    @@main_loop:
+        ; set ES to video memory
+        mov ax, 0a000h
+        mov es, ax 
+
+        mov bx, screen_w * (screen_h/6) + (screen_w/3) ; pixel index
+        xor ax, ax ; y axis
+        @@for_y:
+            ; get y axis coord
+            mov dh, al
+            shr dh, 3
+            shl dh, 4
+
+            xor cx, cx ; x axis
+            @@for_x:
+                ; get x axis coord
+                mov dl, cl
+                shr dl, 3
+                add dl, dh
+
+                ; set color
+                mov byte ptr es:[bx], dl
+                inc bx
+
+                ; loop back
+                inc cx
+                cmp cx, 16d*8d
+                jb @@for_x
+
+            add bx, screen_w - (16d*8d)
+            ; loop back
+            inc ax
+            cmp ax, 16d*8d
+            jb @@for_y
+
+        ; check if key is pressed    
+        mov ah, 01h
+        int 16h
+        jz @@main_loop
+        mov ah, 0h
+        int 16h
+        ; if 'q' pressed, exit
+        cmp ah, 10h
+        je @@break_main
+
+        jmp @@main_loop ; while (true)
+    @@break_main:
+    ret
+show_pallete endp
 
 exit:
     LOG_DEINIT
