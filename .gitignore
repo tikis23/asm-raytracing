@@ -1,0 +1,7 @@
+tasm/
+*.bat
+*.LOG
+*.EXE
+*.OBJ
+*.MAP
+*.TD
