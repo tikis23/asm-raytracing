@@ -39,9 +39,26 @@ LOGGER_INTERNAL_SEG_POP macro
 endm
 
 ; log functions
-LOG_NUM_DEC macro num
-    push ax
+LOG_STR macro string_chars
+    LOCAL strin, strskip
+    push ax cx bx dx
+    jmp strskip
+    strin db string_chars, 0dh, 0ah
+    strskip:
 
+    strlen SIZESTR <string_chars>
+    mov cx, strlen ; buffer size
+    LOGGER_INTERNAL_SEG_PUSH cs
+    mov bx, [logger_file_handle] ; file handle
+    lea dx, strin ; buffer
+    mov ah, 40h
+    int 21h
+    LOGGER_INTERNAL_SEG_POP
+    pop dx bx cx ax
+endm
+LOG_NUM_DEC macro num, signed
+    LOCAL positive
+    push ax bx cx dx bp di
     PUSHSTATE
     IDEAL
     t1 instr <num>,<H>
@@ -49,27 +66,39 @@ LOG_NUM_DEC macro num
     t3 instr <num>,<L>
     t4 instr <num>,<l>
     POPSTATE
-    IF ((.TYPE num) EQ 30h) AND (t1 OR t2 OR t3 OR t4)
+    IF ((.TYPE num) EQ 30h) AND (t1 OR t2 OR t3 OR t4) ;; byte
         xor ah, ah
         mov al, num
-        call logger_write_num_dec_to_file
-    ELSE
+        IF signed
+            cbw
+        ENDIF
+    ELSE ;; word
         mov ax, num
-        call logger_write_num_dec_to_file
     ENDIF
+    xor di, di
+    IF signed
+        cmp ax, 0
+        jge positive
+        neg ax
+        inc di
+        positive:
+    ENDIF
+    call logger_write_num_dec_to_file
 
-    pop ax
+    pop di bp dx cx bx ax
 endm
 
+; logs number in AX, DI = 0 unsigned, DI = 1 signed
 logger_write_num_dec_to_file proc
-    push ax bx cx dx bp
 
     mov bp, sp
     mov cx, 10d
 
-    mov bx, 1
     dec bp
-    mov byte ptr ss:[bp], 10d ; newline
+    mov byte ptr ss:[bp], 0ah ; newline
+    dec bp
+    mov byte ptr ss:[bp], 0dh ; carriage
+    mov bx, 2
     @@l1:
         xor dx, dx
         div cx
@@ -79,6 +108,14 @@ logger_write_num_dec_to_file proc
         inc bx
         cmp ax, 0d
         jne @@l1
+
+    cmp di, 1
+    jne @@unsigned ; if signed push minus
+        mov dl, '-'
+        dec bp
+        mov byte ptr ss:[bp], dl
+        inc bx
+    @@unsigned:
 
     mov cx, bx ; buffer size
     mov bx, [logger_file_handle] ; file handle
@@ -90,6 +127,5 @@ logger_write_num_dec_to_file proc
     LOGGER_INTERNAL_SEG_POP
     xchg sp, bp
 
-    pop bp dx cx bx ax
     ret
 logger_write_num_dec_to_file endp
